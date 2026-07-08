@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comp Copilot — Merit Cycle Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { inter: ['Inter', 'sans-serif'] },
+          colors: {
+            zinc: {
+              950: '#09090b', 900: '#18181b', 800: '#27272a',
+              700: '#3f3f46', 600: '#52525b', 400: '#a1a1aa', 200: '#e4e4e7',
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #09090b; }
+    .card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; }
+    .kpi-value { font-size: 2.5rem; font-weight: 800; line-height: 1; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
+    .badge-red    { background: rgba(239,68,68,.15);  color: #f87171; }
+    .badge-yellow { background: rgba(250,204,21,.12); color: #facc15; }
+    .badge-green  { background: rgba(74,222,128,.12); color: #4ade80; }
+    .badge-gray   { background: rgba(161,161,170,.1); color: #a1a1aa; }
+    .pulse { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+    @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.4 } }
+    tr:hover td { background: #1f1f23; }
+    td,th { transition: background .1s; }
+  </style>
+</head>
+<body class="text-zinc-200 min-h-screen">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header class="border-b border-zinc-800 px-8 py-4 flex items-center justify-between sticky top-0 z-10" style="background:#09090b">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">📊</div>
+      <div>
+        <h1 class="text-base font-bold text-white">Comp Copilot</h1>
+        <p class="text-zinc-400 text-xs">Merit Cycle 2026-H1</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-green-400 pulse"></div>
+        <span class="text-zinc-400 text-xs" id="updated-at">Loading…</span>
+      </div>
+      <button onclick="loadData()" class="text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition">
+        ↻ Refresh
+      </button>
+    </div>
+  </header>
+
+  <main class="px-8 py-6 max-w-screen-xl mx-auto space-y-6">
+
+    <!-- ── KPI Row ─────────────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="card p-5">
+        <p class="text-zinc-400 text-xs font-medium uppercase tracking-wider mb-3">Budget Utilized</p>
+        <p class="kpi-value text-white" id="kpi-util">—</p>
+        <p class="text-zinc-400 text-xs mt-2" id="kpi-budget-detail">—</p>
+        <div class="mt-3 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+          <div id="budget-bar" class="h-full rounded-full transition-all duration-700" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="card p-5">
+        <p class="text-zinc-400 text-xs font-medium uppercase tracking-wider mb-3">Proposals</p>
+        <p class="kpi-value text-white" id="kpi-proposals">—</p>
+        <p class="text-zinc-400 text-xs mt-2">submitted this cycle</p>
+      </div>
+      <div class="card p-5" style="border-color:#713f12">
+        <p class="text-yellow-400 text-xs font-medium uppercase tracking-wider mb-3">⚖️ Equity Flags</p>
+        <p class="kpi-value text-yellow-400" id="kpi-flags">—</p>
+        <p class="text-zinc-400 text-xs mt-2">employees below threshold</p>
+      </div>
+      <div class="card p-5" style="border-color:#7f1d1d">
+        <p class="text-red-400 text-xs font-medium uppercase tracking-wider mb-3">🔺 Escalated</p>
+        <p class="kpi-value text-red-400" id="kpi-escalated">—</p>
+        <p class="text-zinc-400 text-xs mt-2">need exception approval</p>
+      </div>
+    </div>
+
+    <!-- ── Charts Row ──────────────────────────────────────────────────── -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <!-- Manager Bar Chart (spans 2 cols) -->
+      <div class="card p-6 md:col-span-2">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-sm font-semibold text-white">Manager Budget Utilization</h2>
+          <span class="text-zinc-500 text-xs">% of pool used</span>
+        </div>
+        <canvas id="managerChart" height="200"></canvas>
+      </div>
+
+      <!-- Budget Donut -->
+      <div class="card p-6 flex flex-col">
+        <h2 class="text-sm font-semibold text-white mb-5">Overall Budget</h2>
+        <div class="flex-1 flex items-center justify-center">
+          <canvas id="donutChart" style="max-height:200px"></canvas>
+        </div>
+        <div class="mt-4 space-y-2" id="donut-legend"></div>
+      </div>
+    </div>
+
+    <!-- ── Equity Risks Table ──────────────────────────────────────────── -->
+    <div class="card overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-white">⚖️ Active Equity Risks</h2>
+        <span class="text-zinc-500 text-xs">Employees &gt;5% below peer median  ·  EU Pay Transparency Directive 2026</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+              <th class="text-left px-6 py-3 font-medium">Employee</th>
+              <th class="text-left px-6 py-3 font-medium">Role</th>
+              <th class="text-left px-6 py-3 font-medium">Location</th>
+              <th class="text-right px-6 py-3 font-medium">Current</th>
+              <th class="text-right px-6 py-3 font-medium">Peer Median</th>
+              <th class="text-right px-6 py-3 font-medium">Gap</th>
+              <th class="text-right px-6 py-3 font-medium">$ to Close</th>
+              <th class="text-center px-6 py-3 font-medium">Severity</th>
+            </tr>
+          </thead>
+          <tbody id="equity-tbody" class="divide-y divide-zinc-800/50">
+            <tr><td colspan="8" class="text-center text-zinc-500 py-8 text-xs">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Recent Proposals ────────────────────────────────────────────── -->
+    <div class="card overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-800">
+        <h2 class="text-sm font-semibold text-white">Recent Proposals</h2>
+      </div>
+      <div class="divide-y divide-zinc-800/50" id="proposals-list">
+        <div class="px-6 py-4 text-zinc-500 text-xs text-center">Loading…</div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let managerChart = null;
+    let donutChart   = null;
+
+    function fmt(n) {
+      return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+
+    function utilColor(pct) {
+      if (pct > 90) return '#f87171';
+      if (pct > 70) return '#facc15';
+      return '#4ade80';
+    }
+
+    function severityBadge(pct) {
+      const gap = Math.abs(pct);
+      if (gap > 10) return '<span class="badge badge-red">Critical</span>';
+      return '<span class="badge badge-yellow">Warning</span>';
+    }
+
+    function statusBadge(status, flagged) {
+      if (status === 'escalated') return '<span class="badge badge-red">Escalated</span>';
+      if (status === 'approved')  return '<span class="badge badge-green">Approved</span>';
+      if (flagged)                return '<span class="badge badge-yellow">Flagged</span>';
+      return '<span class="badge badge-gray">Pending</span>';
+    }
+
+    async function loadData() {
+      const res  = await fetch('/api/data');
+      const data = await res.json();
+
+      // ── KPIs ──
+      document.getElementById('updated-at').textContent = 'Updated ' + data.updated_at;
+      document.getElementById('kpi-util').textContent      = data.utilization_pct + '%';
+      document.getElementById('kpi-proposals').textContent = data.total_proposals;
+      document.getElementById('kpi-flags').textContent     = data.equity_flags;
+      document.getElementById('kpi-escalated').textContent = data.escalated;
+      document.getElementById('kpi-budget-detail').textContent =
+        fmt(data.total_allocated) + ' of ' + fmt(data.total_budget);
+
+      const bar = document.getElementById('budget-bar');
+      bar.style.width      = data.utilization_pct + '%';
+      bar.style.background = utilColor(data.utilization_pct);
+
+      // ── Manager Bar Chart ──
+      const labels  = data.managers.map(m => m.name.split(' ')[0]);
+      const values  = data.managers.map(m => m.utilization);
+      const colors  = values.map(utilColor);
+
+      if (managerChart) managerChart.destroy();
+      const mgCtx = document.getElementById('managerChart').getContext('2d');
+      managerChart = new Chart(mgCtx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderColor: colors,
+            borderRadius: 6,
+            barThickness: 22,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const m = data.managers[ctx.dataIndex];
+                  return [
+                    ' ' + ctx.parsed.x + '% utilized',
+                    ' ' + fmt(m.remaining) + ' remaining',
+                    ' ' + m.proposals + ' proposal(s)' + (m.flags ? '  ⚖️ ' + m.flags : ''),
+                  ];
+                },
+              },
+              backgroundColor: '#1f1f23',
+              borderColor: '#3f3f46',
+              borderWidth: 1,
+              titleColor: '#fff',
+              bodyColor: '#a1a1aa',
+              padding: 10,
+            },
+          },
+          scales: {
+            x: {
+              max: 100,
+              grid: { color: '#27272a' },
+              ticks: { color: '#71717a', font: { size: 11 }, callback: v => v + '%' },
+              border: { color: '#3f3f46' },
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: '#e4e4e7', font: { size: 12, weight: '500' } },
+              border: { display: false },
+            },
+          },
+        },
+      });
+
+      // ── Donut Chart ──
+      const remaining = data.total_budget - data.total_allocated;
+      if (donutChart) donutChart.destroy();
+      const dCtx = document.getElementById('donutChart').getContext('2d');
+      donutChart = new Chart(dCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Allocated', 'Remaining'],
+          datasets: [{
+            data: [data.total_allocated, remaining],
+            backgroundColor: ['#6366f1', '#27272a'],
+            borderColor: ['#6366f1', '#27272a'],
+            borderWidth: 0,
+            hoverOffset: 4,
+          }],
+        },
+        options: {
+          cutout: '72%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: { label: ctx => ' ' + fmt(ctx.parsed) },
+              backgroundColor: '#1f1f23',
+              borderColor: '#3f3f46',
+              borderWidth: 1,
+              bodyColor: '#a1a1aa',
+              padding: 10,
+            },
+          },
+        },
+        plugins: [{
+          id: 'center-text',
+          afterDraw(chart) {
+            const { ctx, chartArea: { width, height, left, top } } = chart;
+            ctx.save();
+            const cx = left + width / 2, cy = top + height / 2;
+            ctx.fillStyle = '#fff';
+            ctx.font = '700 1.4rem Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(data.utilization_pct + '%', cx, cy - 8);
+            ctx.fillStyle = '#71717a';
+            ctx.font = '400 0.65rem Inter, sans-serif';
+            ctx.fillText('utilized', cx, cy + 12);
+            ctx.restore();
+          },
+        }],
+      });
+
+      document.getElementById('donut-legend').innerHTML = `
+        <div class="flex items-center justify-between text-xs">
+          <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block"></span> Allocated</span>
+          <span class="text-zinc-300 font-medium">${fmt(data.total_allocated)}</span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-zinc-700 inline-block"></span> Remaining</span>
+          <span class="text-zinc-300 font-medium">${fmt(remaining)}</span>
+        </div>`;
+
+      // ── Equity Table ──
+      const tbody = document.getElementById('equity-tbody');
+      if (!data.equity_risks.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-zinc-500 py-8 text-xs">✅ No active equity risks</td></tr>';
+      } else {
+        tbody.innerHTML = data.equity_risks.map(r => `
+          <tr class="group">
+            <td class="px-6 py-3.5 font-medium text-white">${r.name}</td>
+            <td class="px-6 py-3.5 text-zinc-400">${r.role} <span class="text-zinc-600">${r.level}</span></td>
+            <td class="px-6 py-3.5 text-zinc-400">${r.location}</td>
+            <td class="px-6 py-3.5 text-right text-zinc-300">${fmt(r.current)}</td>
+            <td class="px-6 py-3.5 text-right text-zinc-300">${fmt(r.median)}</td>
+            <td class="px-6 py-3.5 text-right font-semibold ${Math.abs(r.gap_pct) > 10 ? 'text-red-400' : 'text-yellow-400'}">${r.gap_pct}%</td>
+            <td class="px-6 py-3.5 text-right text-zinc-300">+${fmt(r.gap_dollar)}</td>
+            <td class="px-6 py-3.5 text-center">${severityBadge(r.gap_pct)}</td>
+          </tr>`).join('');
+      }
+
+      // ── Recent Proposals ──
+      const list = document.getElementById('proposals-list');
+      if (!data.recent_proposals.length) {
+        list.innerHTML = '<div class="px-6 py-4 text-zinc-500 text-xs text-center">No proposals yet</div>';
+      } else {
+        list.innerHTML = data.recent_proposals.map(p => `
+          <div class="px-6 py-3.5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400">
+                ${p.employee.split(' ').map(w => w[0]).join('').slice(0,2)}
+              </div>
+              <div>
+                <p class="text-sm font-medium text-white">${p.employee}</p>
+                <p class="text-xs text-zinc-500">${fmt(p.current)} → ${fmt(p.proposed)}</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-sm font-semibold ${p.increase_pct > 0 ? 'text-green-400' : 'text-zinc-400'}">
+                +${p.increase_pct?.toFixed(1)}%
+              </span>
+              ${statusBadge(p.status, p.equity_flagged)}
+            </div>
+          </div>`).join('');
+      }
+    }
+
+    loadData();
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>

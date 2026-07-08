@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "comp-planning-copilot"
+version = "0.1.0"
+description = "AI comp agent for HR managers in Slack — no overspend, no pay gaps, no spreadsheets."
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0",
+    "sqlalchemy>=2.0",
+    "slack-bolt>=1.18",
+    "slack-sdk>=3.27",
+    "python-dotenv>=1.0",
+    "httpx>=0.27",
+    "aiohttp>=3.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mcp_server", "slack_agent"]
